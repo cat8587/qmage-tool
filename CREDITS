@@ -1,0 +1,11 @@
+Most of the library code is based on Peter Ross's patch for Qmage support in FFmpeg
+
+ - Link: https://ffmpeg.org/pipermail/ffmpeg-devel/2024-November/336379.html
+ - Copyright: (c) 2024 Peter Ross
+ - SPDX License Identifier: LGPL-2.1-or-later
+
+A small amount of the code is checked against the qmgd utility from BrotherBoard
+
+ - Link: https://github.com/BroBordd/qmgd
+ - Copyright: Copyright (C) 2026 Bedoo
+ - SPDX License Identifier: GPL-3.0-or-later
