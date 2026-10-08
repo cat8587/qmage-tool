@@ -2,5 +2,12 @@
 name = "qmage"
 version = "0.0.1"
 edition = "2024"
+license = "LGPL-2.1-or-later"
 
 [dependencies]
+thiserror = "^2.0.21"
+image = { version = "^0.25.10", optional = true, default-features = false }
+
+[features]
+default = []
+image-convert = ["dep:image"]

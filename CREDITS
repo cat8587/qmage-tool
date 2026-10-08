@@ -1,3 +1,221 @@
+ === Libraries ===
+Rust standard library (std):
+ - Repository: https://github.com/rust-lang/rust/tree/main/library/std
+ - Copyright: Copyright (c) The Rust Project Contributors
+ - SPDX License Identifier: Apache-2.0 OR MIT
+
+adler2:
+ - Repository: https://github.com/oyvindln/adler2
+ - Copyright: Copyright (C) Jonas Schievink <jonasschievink@gmail.com>
+ - SPDX License Identifier: 0BSD OR Apache-2.0 OR MIT
+
+anstream:
+ - Repository: https://github.com/rust-cli/anstyle/tree/main/crates/anstream
+ - Owner: Ed Page
+ - SPDX License Identifier: Apache-2.0 OR MIT
+
+anstyle:
+ - Repository: https://github.com/rust-cli/anstyle/tree/main/crates/anstyle
+ - Owner: Ed Page
+ - SPDX License Identifier: Apache-2.0 OR MIT
+
+anstyle-parse:
+ - Repository: https://github.com/rust-cli/anstyle/tree/main/crates/anstyle-parse
+ - Owner: Ed Page
+ - SPDX License Identifier: Apache-2.0 OR MIT
+
+anstyle-query:
+ - Repository: https://github.com/rust-cli/anstyle/tree/main/crates/anstyle-query
+ - Owner: Ed Page
+ - SPDX License Identifier: Apache-2.0 OR MIT
+
+anstyle-wincon:
+ - Repository: https://github.com/rust-cli/anstyle/tree/main/crates/anstyle-wincon
+ - Owner: Ed Page
+ - SPDX License Identifier: Apache-2.0 OR MIT
+
+autocfg:
+ - Repository: https://github.com/cuviper/autocfg
+ - Copyright: Copyright (c) 2018 Josh Stone
+ - SPDX License Identifier: Apache-2.0 OR MIT
+
+bytemuck:
+ - Repository: https://github.com/Lokathor/bytemuck
+ - Copyright: Copyright (c) 2019 Daniel "Lokathor" Gee.
+ - SPDX License Identifier: Zlib OR Apache-2.0 OR MIT
+
+byteorder-lite:
+ - Repository: https://github.com/image-rs/byteorder-lite
+ - Copyright: Copyright (c) 2015 Andrew Gallant
+ - SPDX License Identifier: Unlicense or MIT
+
+cfg-if:
+ - Repository: https://github.com/rust-lang/cfg-if
+ - Copyright: Copyright (c) 2014 Alex Crichton
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+clap_builder:
+ - Repository: https://github.com/clap-rs/clap/tree/main/clap_builder
+ - Copyright: Copyright (c) Individual contributors
+ - Owner: Ed Page
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+clap_derive:
+ - Repository: https://github.com/clap-rs/clap/tree/main/clap_derive
+ - Copyright: Copyright (c) Individual contributors
+ - Owner: Kevin K.
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+clap_lex:
+ - Repository: https://github.com/clap-rs/clap/tree/main/clap_lex
+ - Copyright: Copyright (c) Individual contributors
+ - Owner: Ed Page
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+colorchoice:
+ - Repository: https://github.com/rust-cli/anstyle/tree/main/crates/colorchoice
+ - Copyright: Copyright (c) Individual contributors
+ - Owner: Ed Page
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+crc32fast:
+ - Repository: https://github.com/srijs/rust-crc32fast
+ - Copyright: Copyright (c) 2018 Sam Rijs, Alex Crichton and contributors
+ - SPDX License Identifier: MIR OR Apache-2.0
+
+fdeflate:
+ - Repository: https://github.com/image-rs/fdeflate
+ - Owner: fintelia
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+flate2:
+ - Repository: https://github.com/rust-lang/flate2-rs
+ - Copyright: Copyright (c) 2014-2026 Alex Crichton
+ - SPDX License Identifier: MIR OR Apache-2.0
+
+heck:
+ - Repository: https://github.com/withoutboats/heck
+ - Copyright: Copyright (c) 2015 The Rust Project Developers
+ - Owners: withoutboats, Jonas Platte
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+image:
+ - Repository: https://github.com/image-rs/image
+ - Maintainers: Aurelia Molzer, fintelia
+ - SPDX Licence Identifier: Apache-2.0 OR MIT
+
+is_terminal_polyfill:
+ - Repository: https://github.com/polyfill-rs/is_terminal_polyfill
+ - Copyright: Copyright (c) Individual contributors
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+miniz_oxide:
+ - Repository: https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide
+ - Copyright: Copyright 2013-2014 RAD Game Tools and Valve Software Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC Copyright (c) 2017 Frommi Copyright (c) 2017-2024 oyvindln
+ - SPDX License Identifier: MIT OR Zlib OR Apache-2.0
+
+moxcms:
+ - Repository: https://github.com/awxkee/moxcms
+ - Copyright: Copyright (c) Radzivon Bartoshyk. All rights reserved.
+ - SPDX License Identifier: BSD-3-Clause OR Apache-2.0
+
+num-traits:
+ - Repository: https://github.com/rust-num/num-traits
+ - Copyright: Copyright (c) 2014 The Rust Project Developers
+ - Owner: Josh Stone
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+once_cell_polyfill:
+ - Repository: https://github.com/polyfill-rs/once_cell_polyfill
+ - Copyright: Copyright (c) Individual contributors
+ - Owner: Ed Page
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+png:
+ - Repository: https://github.com/image-rs/image-png
+ - Copyright: Copyright (c) 2015 nwin
+ - Owner: fintelia, Aurelia Molzer
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+proc-macro2:
+ - Repository: https://github.com/dtolnay/proc-macro2
+ - Owner: David Tolnay
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+pxfm:
+ - Repository: https://github.com/awxkee/pxfm
+ - Copyright: Copyright (c) Radzivon Bartoshyk. All rights reserved.
+ - SPDX License Identifier: BSD-3-Clause OR Apache-2.0
+
+quote:
+ - Repository: https://github.com/dtolnay/quote
+ - Owner: Davil Tolnay
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+simd-adler32:
+ - Repository: https://github.com/mcountryman/simd-adler32
+ - Copyright: Copyright (c) [2021] [Marvin Countryman]
+ - SPDX License Identifier: MIT
+
+strsim:
+ - Repository: https://github.com/rapidfuzz/strsim-rs
+ - Copyright: Copyright (c) 2015 Danny Guo
+              Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+              Copyright (c) 2018 Akash Kurdekar
+ - SPDX License Identifier: MIT
+
+syn:
+ - Repository: https://github.com/dtolnay/syn
+ - Owner: David Tolnay
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+thiserror:
+ - Repository: https://github.com/dtolnay/thiserror
+ - Owner: David Tolnay
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+thiserror-impl:
+ - Repository: https://github.com/dtolnay/thiserror/tree/master/impl
+ - Owner: David Tolnay
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+unicode-ident:
+ - Repository: https://github.com/dtolnay/unicode-ident
+ - Owner: David Tolnay
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+utf8parse:
+ - Repository: https://crates.io/crates/utf8parse/0.2.2/code/Cargo.toml
+ - Copyright: Copyright (c) 2016 Joe Wilm
+ - SPDX License Identifier: Apache-2.0 OR MIT
+
+windows-link:
+ - Repository: https://github.com/microsoft/windows-rs/tree/master/crates/libs/link
+ - Copyright: Copyright (c) Microsoft Corporation.
+ - Owner: Kenny Kerr
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+windows-sys:
+ - Repository: https://github.com/microsoft/windows-rs/tree/master/crates/libs/sys
+ - Copyright: Copyright (c) Microsoft Corporation.
+ - Owner: Kenny Kerr
+ - SPDX License Identifier: MIT OR Apache-2.0
+
+zlib-rs:
+ - Repository: https://github.com/trifectatechfoundation/zlib-rs
+ - Copyright: (C) 2024 Trifecta Tech Foundation
+ - Owners: Ruben Nijveld, Folkert de Vires
+ - SPDX License Identifier: Zlib
+
+ === Databases ===
+
+Unicode Character Database:
+ - Repository: https://www.unicode.org/Public/UCD/latest/
+ - Copyright: (c) 1991–2025 Unicode, Inc.
+ - SPDX License Identifier: Unicode-3.0
+
+ === Code References ===
+
 Most of the library code is based on Peter Ross's patch for Qmage support in FFmpeg
 
  - Link: https://ffmpeg.org/pipermail/ffmpeg-devel/2024-November/336379.html
@@ -7,5 +225,5 @@ Most of the library code is based on Peter Ross's patch for Qmage support in FFm
 A small amount of the code is checked against the qmgd utility from BrotherBoard
 
  - Link: https://github.com/BroBordd/qmgd
- - Copyright: Copyright (C) 2026 Bedoo
+ - Author: "Bedoo"
  - SPDX License Identifier: GPL-3.0-or-later

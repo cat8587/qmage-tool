@@ -2,5 +2,9 @@
 name = "qmage-tool"
 version = "0.0.1"
 edition = "2024"
+license = "LGPL-2.1-or-later"
 
 [dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+qmage = { path = "../library", features = ["image-convert"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
