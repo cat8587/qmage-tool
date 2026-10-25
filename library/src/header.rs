@@ -22,7 +22,7 @@ pub struct QmageHeader {
     // offset: 0x4, mask: 0x20, inverted
     pub is_compressed: bool,
     // offset: 0x4, mask: 0x1f
-    pub unknown1: u8,
+    pub qp: u8,
 
     // offset: 0x5, mask: 0x8f
     pub unknown2: u8,
@@ -103,7 +103,7 @@ impl QmageHeader {
 
         let use_chroma_key = (header[4] & 0x40) > 0;
         let is_compressed = (header[4] & 0x20) == 0;
-        let unknown1 = header[4] & 0x1f;
+        let qp = header[4] & 0x1f;
 
         let bit_depth = (header[5] & 0x40) > 0;
         let alpha_depth = (header[5] & 0x20) > 0;
@@ -163,7 +163,7 @@ impl QmageHeader {
             is_multiframe,
             use_chroma_key,
             is_compressed,
-            unknown1,
+            qp,
             bit_depth,
             alpha_depth,
             custom_lookup_table,
@@ -197,17 +197,36 @@ impl QmageHeader {
         };
 
         if self.header_size != expected_size {
-            return Err(QmageHeaderError::InvalidSize(self.header_size, expected_size));
+            return Err(QmageHeaderError::InvalidSize(
+                self.header_size,
+                expected_size,
+            ));
         }
 
         Ok(())
+    }
+
+    #[inline]
+    pub fn get_record_size(&self, is_first_frame: bool) -> Option<usize> {
+        if let Some(m) = self.multiframe_data.as_ref() {
+            if self.version == QMAGE_MAGIC_VERSION || (!is_first_frame) {
+                Some(m.total_length as usize)
+            } else {
+                Some(4 * (m.total_length as usize))
+            }
+        } else {
+            None
+        }
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct MultiframeData {
     // offset: 0xc, little endian
+    // for first frame:
     // total_length * 4 = length of the frame and header
+    // for every other frame:
+    // total_length = length of frame and header
     pub total_length: u16,
 
     // offset: 0xe, little endian

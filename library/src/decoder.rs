@@ -1,6 +1,7 @@
 use crate::bit_reader::BitReader;
 use crate::header::{QMAGE_MAGIC_VERSION, QmageCodec, QmageHeader, QmagePixelType};
 use crate::pixels::{Pixel, PixelArray};
+use thiserror::Error;
 
 const QMAGE_ORIGINAL_DELTA: [[u16; 256]; 2] = [
     [
@@ -60,16 +61,17 @@ const QMAGE_ORIGINAL_DELTA: [[u16; 256]; 2] = [
 const QMAGE_DIRS: [(isize, isize); 3] = [(-1, 0), (0, -1), (-1, -1)];
 
 fn decode_pixel_in_block<'a>(
-    copy: Option<bool>,
-    deltas: &[u16],
+    array: &mut PixelArray,
+    reference: Option<&PixelArray>,
     bitstream1: &mut BitReader<'a>,
     bitstream2: Option<&mut BitReader<'a>>,
     byte_stream: &mut dyn Iterator<Item = &u8>,
-    array: &mut PixelArray,
     x: usize,
     y: usize,
     relative_x: isize,
     relative_y: isize,
+    copy: Option<bool>,
+    deltas: &[u16],
 ) {
     // TODO: Remove all the .unwrap() calls
 
@@ -77,9 +79,10 @@ fn decode_pixel_in_block<'a>(
     let source_y = (y as isize + relative_y) as usize;
     let copy = copy.unwrap_or_else(|| bitstream1.read_bits8(1) > 0);
     if copy {
-        array
-            .set_pixel(x, y, array.get_pixel_zero(source_x, source_y))
-            .unwrap();
+        let pixel = reference
+            .unwrap_or(array)
+            .get_pixel_zero(source_x, source_y);
+        array.set_pixel(x, y, pixel).unwrap();
     } else {
         let n_bits = bitstream2.unwrap_or(bitstream1).read_bits8(3) as usize;
         if n_bits == 7 {
@@ -90,7 +93,10 @@ fn decode_pixel_in_block<'a>(
         } else {
             let index = bitstream1.read_bits8(n_bits + 1) as usize;
             let delta = deltas[index + (2 << n_bits) - 2];
-            let pixel = match array.get_pixel_zero(source_x, source_y) {
+            let pixel = match reference
+                .unwrap_or(array)
+                .get_pixel_zero(source_x, source_y)
+            {
                 Pixel::RGB565(p) => p,
                 _ => panic!("Not RGB565 pixel array"),
             };
@@ -100,23 +106,412 @@ fn decode_pixel_in_block<'a>(
     }
 }
 
-fn copy_edge(array: &mut PixelArray, x: usize, y: usize, width: usize, height: usize) {
+fn copy_block(
+    array: &mut PixelArray,
+    reference: Option<&PixelArray>,
+    source_x: usize,
+    source_y: usize,
+    dest_x: usize,
+    dest_y: usize,
+    width: usize,
+    height: usize,
+) {
+    let pixel_size = array.pixel_type().bytes_per_pixel();
+    let line_size = pixel_size * array.width();
+    let buffer = array.buffer_mut();
+    for dy in 0..height {
+        let offset_a = (dest_y + dy) * line_size + dest_x * pixel_size;
+        if let Some(r) = reference {
+            let offset_b = (dest_y + dy) * line_size + (dest_x + width) * pixel_size;
+            let ref_pixel_size = r.pixel_type().bytes_per_pixel();
+            let ref_line_size = ref_pixel_size * r.width();
+            let offset_c = (source_y + dy) * ref_line_size + source_x * ref_pixel_size;
+            let offset_d = (source_y + dy) * ref_line_size + (source_x + width) * ref_pixel_size;
+            buffer[offset_a..offset_b].copy_from_slice(&r.buffer()[offset_c..offset_d]);
+        } else {
+            let offset_c = (source_y + dy) * line_size + source_x * pixel_size;
+            let offset_d = (source_y + dy) * line_size + (source_x + width) * pixel_size;
+            buffer.copy_within(offset_c..offset_d, offset_a);
+        }
+    }
+}
+
+fn copy_edge(
+    array: &mut PixelArray,
+    reference: Option<&PixelArray>,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+) {
     for j in 0..height {
-        let pixel = array.get_pixel_zero(x.max(1) - 1, y + j);
+        let pixel = reference.unwrap_or(array).get_pixel_zero(x - 1, y + j);
         for i in 0..width {
             array.set_pixel(x + i, y + j, pixel);
         }
     }
 }
 
-pub fn decode_image(header: QmageHeader, buffer: &[u8]) -> PixelArray {
+fn decode_block2_animated(
+    array: &mut PixelArray,
+    reference: Option<&PixelArray>,
+    header: &QmageHeader,
+    bitstream: &mut BitReader,
+    byte_stream: &mut dyn Iterator<Item = &u8>,
+    x: usize,
+    y: usize,
+    deltas: &[u16],
+    mode: Option<usize>,
+) -> Result<(), QmageDecodeError> {
+    let mode = mode.unwrap_or_else(|| bitstream.read_bits8(2) as usize);
+    if mode > 3 {
+        return Err(QmageDecodeError::FieldOutOfRange("mode"));
+    }
+    if header.qp == 0 || (bitstream.read_bits8(1) > 0) {
+        if mode < 3 {
+            for j in 0..4 {
+                for i in 0..4 {
+                    decode_pixel_in_block(
+                        array,
+                        None,
+                        bitstream,
+                        None,
+                        byte_stream,
+                        (x + i) as usize,
+                        (y + j) as usize,
+                        QMAGE_DIRS[mode].0,
+                        QMAGE_DIRS[mode].1,
+                        None,
+                        &deltas,
+                    );
+                }
+            }
+        } else {
+            if x > 0 {
+                copy_edge(
+                    array,
+                    reference,
+                    x,
+                    y,
+                    4.min(header.width as usize - x),
+                    4.min(header.height as usize - y),
+                );
+            }
+        }
+    } else {
+        return Err(QmageDecodeError::UnknownError);
+    }
+
+    Ok(())
+}
+
+fn decode_block3_animated(
+    array: &mut PixelArray,
+    reference: Option<&PixelArray>,
+    header: &QmageHeader,
+    bitstream: &mut BitReader,
+    byte_stream: &mut dyn Iterator<Item = &u8>,
+    x: usize,
+    y: usize,
+    mv_x: isize,
+    mv_y: isize,
+    deltas: &[u16],
+) -> Result<(), QmageDecodeError> {
+    let mode = bitstream.read_bits8(3);
+    if mode <= 3 {
+        return decode_block2_animated(
+            array,
+            None,
+            header,
+            bitstream,
+            byte_stream,
+            x,
+            y,
+            deltas,
+            Some(mode as usize),
+        );
+    }
+    match mode {
+        4 => {
+            for j in 0..4 {
+                for i in 0..4 {
+                    decode_pixel_in_block(
+                        array,
+                        reference,
+                        bitstream,
+                        None,
+                        byte_stream,
+                        (x + i) as usize,
+                        (y + j) as usize,
+                        0,
+                        0,
+                        None,
+                        &deltas,
+                    );
+                }
+            }
+        }
+        5 => {
+            if reference.is_some() {
+                copy_block(array, reference, x, y, x, y, 4, 4);
+            }
+        }
+        6 => {
+            for j in 0..4 {
+                for i in 0..4 {
+                    decode_pixel_in_block(
+                        array,
+                        reference,
+                        bitstream,
+                        None,
+                        byte_stream,
+                        x + i,
+                        y + j,
+                        mv_x,
+                        mv_y,
+                        None,
+                        &deltas,
+                    );
+                }
+            }
+        }
+        7 => {
+            if (x as isize) + mv_x < 0
+                || (x as isize) + mv_x > (header.width as isize)
+                || (y as isize) + mv_y < 0
+                || (y as isize) + mv_y > (header.height as isize)
+            {
+                return Err(QmageDecodeError::OffscreenMove);
+            }
+
+            if reference.is_some() {
+                copy_block(
+                    array,
+                    reference,
+                    ((x as isize) + mv_x) as usize,
+                    ((y as isize) + mv_y) as usize,
+                    x,
+                    y,
+                    4,
+                    4,
+                );
+            }
+        }
+        0..=3 => unreachable!(),
+        8.. => unreachable!(),
+    }
+
+    Ok(())
+}
+
+fn decode_mbedge_animated(
+    array: &mut PixelArray,
+    header: &QmageHeader,
+    bitstream: &mut BitReader,
+    byte_stream: &mut dyn Iterator<Item = &u8>,
+    x_position: usize,
+    y_position: usize,
+    deltas: &[u16],
+) -> Result<(), QmageDecodeError> {
+    let width = header.width as usize;
+    let height = header.height as usize;
+    if array.pixel_type() != QmagePixelType::RGB565 {
+        return Err(QmageDecodeError::UnsupportedPixelType(array.pixel_type()));
+    }
+    if bitstream.read_bits8(1) > 0 {
+        return Err(QmageDecodeError::UnknownError);
+    }
+    for y in (y_position..(y_position + 16).min(height)).step_by(4) {
+        for x in (x_position..(x_position + 16).min(width)).step_by(4) {
+            if x + 4 <= width && y + 4 <= height {
+                decode_block2_animated(
+                    array,
+                    None,
+                    header,
+                    bitstream,
+                    byte_stream,
+                    x,
+                    y,
+                    deltas,
+                    None,
+                )?;
+            } else {
+                for j in 0..4 {
+                    for i in 0..4 {
+                        if x + i < width && y + j < height {
+                            let byte_a = match byte_stream.next() {
+                                Some(byte) => (*byte) as u16,
+                                None => return Err(QmageDecodeError::RanOutOfBytes),
+                            };
+                            let byte_b = match byte_stream.next() {
+                                Some(byte) => (*byte) as u16,
+                                None => return Err(QmageDecodeError::RanOutOfBytes),
+                            };
+                            let pixel = (byte_a << 8) | byte_b;
+                            array
+                                .set_pixel(x + i, y + j, Pixel::RGB565(pixel))
+                                .unwrap_or_else(|| unreachable!());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn decode_mb_animated(
+    array: &mut PixelArray,
+    reference: Option<&PixelArray>,
+    header: &QmageHeader,
+    bitstream: &mut BitReader,
+    byte_stream: &mut dyn Iterator<Item = &u8>,
+    x: usize,
+    y: usize,
+    deltas: &[u16],
+) -> Result<(), QmageDecodeError> {
+    if bitstream.read_bits8(1) > 0 {
+        if bitstream.read_bits8(1) > 0 {
+            if reference.is_some() {
+                copy_block(array, reference, x, y, x, y, 16, 16);
+            }
+        } else {
+            let mv_x: isize;
+            let mv_y: isize;
+            if bitstream.read_bits8(1) > 0 {
+                mv_x = 0;
+                mv_y = 0;
+            } else {
+                mv_x = bitstream.read_bits8(8) as isize - 0x7f;
+                mv_y = bitstream.read_bits8(7) as isize - 0x3f;
+
+                if (x as isize) + mv_x < 0
+                    || (x as isize) + mv_x > (header.width as isize)
+                    || (y as isize) + mv_y < 0
+                    || (y as isize) + mv_y > (header.height as isize)
+                {
+                    return Err(QmageDecodeError::OffscreenMove);
+                }
+
+                if bitstream.read_bits8(1) > 0 {
+                    copy_block(
+                        array,
+                        reference,
+                        ((x as isize) + mv_x) as usize,
+                        ((y as isize) + mv_y) as usize,
+                        x,
+                        y,
+                        16,
+                        16,
+                    );
+                    return Ok(());
+                }
+            }
+
+            for j in (0..16).step_by(4) {
+                for i in (0..16).step_by(4) {
+                    decode_block3_animated(
+                        array,
+                        reference,
+                        header,
+                        bitstream,
+                        byte_stream,
+                        x + i,
+                        y + j,
+                        mv_x,
+                        mv_y,
+                        deltas,
+                    )?;
+                }
+            }
+        }
+    } else {
+        for j in (0..16).step_by(4) {
+            for i in (0..16).step_by(4) {
+                decode_block2_animated(
+                    array,
+                    None,
+                    header,
+                    bitstream,
+                    byte_stream,
+                    x + i,
+                    y + j,
+                    deltas,
+                    None,
+                )?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub fn decode_v16shortindex_animated(
+    array: &mut PixelArray,
+    reference: &PixelArray,
+    header: &QmageHeader,
+    buffer: &[u8],
+) -> Result<(), QmageDecodeError> {
+    let header_size = header.header_size;
+    let size = match header.get_record_size(false) {
+        Some(s) => s,
+        None => return Err(QmageDecodeError::NoMultiframeData),
+    };
+    let bitstream_start = header_size + 8;
+    let mut bitstream = BitReader::new(&buffer[bitstream_start..size]);
+    let byte_stream_start = u32::from_le_bytes([
+        buffer[header_size],
+        buffer[header_size + 1],
+        buffer[header_size + 2],
+        buffer[header_size + 3],
+    ]) as usize;
+    let mut byte_stream = buffer[byte_stream_start..size].iter();
+    let width = header.width;
+    let height = header.height;
+    let ori_delta = QMAGE_ORIGINAL_DELTA[(header.version != QMAGE_MAGIC_VERSION) as usize];
+    for y in (0..height).step_by(16) {
+        for x in (0..width).step_by(16) {
+            if x <= (width - 16) && y <= (height - 16) {
+                decode_mb_animated(
+                    array,
+                    Some(reference),
+                    header,
+                    &mut bitstream,
+                    &mut byte_stream,
+                    x as usize,
+                    y as usize,
+                    &ori_delta,
+                )?;
+            } else {
+                decode_mbedge_animated(
+                    array,
+                    header,
+                    &mut bitstream,
+                    &mut byte_stream,
+                    x as usize,
+                    y as usize,
+                    &ori_delta,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn decode_v16shortindex_first_frame(
+    array: &mut PixelArray,
+    header: &QmageHeader,
+    buffer: &[u8],
+) -> Result<(), QmageDecodeError> {
     if header.codec != QmageCodec::V16ShortIndex {
-        panic!("Codec not supported yet");
+        return Err(QmageDecodeError::IncorrectCodec(
+            QmageCodec::V16ShortIndex,
+            header.codec,
+        ));
     }
     let header_size = header.header_size;
-    let multiframe_data = header.multiframe_data.unwrap();
-    let size = multiframe_data.total_length as usize * 4;
-
+    let size = header.get_record_size(true).unwrap_or(buffer.len());
     let bitstream1_start = header_size + 8;
     let mut bitstream1 = BitReader::new(&buffer[bitstream1_start..size]);
 
@@ -165,10 +560,8 @@ pub fn decode_image(header: QmageHeader, buffer: &[u8]) -> PixelArray {
     };
 
     if header.image_type != QmagePixelType::RGB565 {
-        panic!("Not implemented");
+        return Err(QmageDecodeError::NotImplemented("non-RGB565 images"));
     }
-
-    let mut array = PixelArray::new(header.image_type, header.width, header.height);
 
     for y in (0..header.height).step_by(4) {
         for x in (0..header.width).step_by(4) {
@@ -183,31 +576,54 @@ pub fn decode_image(header: QmageHeader, buffer: &[u8]) -> PixelArray {
                     for i in 0..4 {
                         if (x + i) < header.width && (y + j) < header.height {
                             decode_pixel_in_block(
-                                Some((cbp & (1 << k)) > 0),
-                                &ori_delta,
+                                array,
+                                None,
                                 &mut bitstream1,
                                 Some(&mut bitstream2),
                                 &mut byte_stream,
-                                &mut array,
                                 (x + i) as usize,
                                 (y + j) as usize,
                                 QMAGE_DIRS[mode].0,
                                 QMAGE_DIRS[mode].1,
+                                Some((cbp & (1 << k)) > 0),
+                                &ori_delta,
                             );
                             k += 1
                         }
                     }
                 }
             } else if x > 0 {
-                copy_edge(
-                    &mut array,
-                    x as usize,
-                    y as usize,
-                    4.min((header.width - x) as usize),
-                    4.min((header.height - y) as usize),
-                );
+                copy_edge(array, None, x as usize, y as usize, 4, 4);
             }
         }
     }
-    array
+
+    Ok(())
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Error)]
+pub enum QmageDecodeError {
+    #[error("No multiframe data provided when it's required")]
+    NoMultiframeData,
+
+    #[error("Expected {0:?} codec but got {1:?}")]
+    IncorrectCodec(QmageCodec, QmageCodec),
+
+    #[error("Ran out of bytes while reading")]
+    RanOutOfBytes,
+
+    #[error("Unsupported pixel type {0:?}")]
+    UnsupportedPixelType(QmagePixelType),
+
+    #[error("Unknown error")]
+    UnknownError,
+
+    #[error("Field {0} out of rande")]
+    FieldOutOfRange(&'static str),
+
+    #[error("Offscreen move instruction in image")]
+    OffscreenMove,
+
+    #[error("Support for {0} not implemented")]
+    NotImplemented(&'static str),
 }
