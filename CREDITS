@@ -207,6 +207,18 @@ zlib-rs:
  - Owners: Ruben Nijveld, Folkert de Vires
  - SPDX License Identifier: Zlib
 
+zune-core:
+ - Repository: https://github.com/etemesi254/zune-image/tree/dev/crates/zune-core
+ - Copyright: Copyright (c) zune-image developers
+ - Owner: Caleb Etemesi
+ - SPDX License Identifier: Apache-2.0 OR MIT OR Zlib
+
+zune-jpeg:
+ - Repository: https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg
+ - Copyright: Copyright (c) zune-image developers
+ - Owner: Caleb Etemesi
+ - SPDX License Identifier: Apache-2.0 OR MIT OR Zlib
+
  === Databases ===
 
 Unicode Character Database:

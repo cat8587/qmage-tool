@@ -7,4 +7,10 @@ license = "LGPL-2.1-or-later"
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
 qmage = { path = "../library", features = ["image-convert"] }
-image = { version = "0.25.10", default-features = false, features = ["png"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1

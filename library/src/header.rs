@@ -69,7 +69,7 @@ pub struct QmageHeader {
 
     // offset: 0xc, length: 0x4
     // probably unused
-    pub unknown7: Option<[u8; 4]>,
+    pub unknown9: Option<[u8; 4]>,
 
     pub header_size: usize,
 }
@@ -81,7 +81,7 @@ impl QmageHeader {
         }
 
         let magic = u16::from_le_bytes([header[0], header[1]]);
-        if (magic != QMAGE_MAGIC_1) && (magic != QMAGE_MAGIC_2) {
+        if magic != QMAGE_MAGIC_2 {
             return Err(QmageHeaderError::UnknownMagicNumber(magic));
         }
         let version = header[2];
@@ -132,25 +132,42 @@ impl QmageHeader {
         let unknown4 = header[11] & 0x43;
 
         let multiframe_data = if is_multiframe {
-            let total_length = u16::from_le_bytes([header[12], header[13]]);
-            let current_frame = u16::from_le_bytes([header[14], header[15]]);
-            let frame_time = u16::from_le_bytes([header[16], header[17]]);
-            let unknown5 = header[18] & 0xfe;
-            let animation_repeats = (header[18] & 0x01) == 0;
-            let unknown6 = [header[19], header[20], header[21], header[22], header[23]];
+            let mut alpha_encoder_mode: u8 = codec.into();
+            let mut unknown5 = 0;
+            let mut unknown6 = 0;
+            let total_length = if version > QMAGE_MAGIC_VERSION {
+                u16::from_le_bytes([header[12], header[13]]) as u32
+            } else {
+                u32::from_le_bytes([header[12], header[13], header[14], header[15]])
+            };
+            if version > QMAGE_MAGIC_VERSION {
+                alpha_encoder_mode = header[14] & 0x0f;
+                unknown5 = header[14] & 0xf0;
+                unknown6 = header[15];
+            }
+            let total_frame_count = u16::from_le_bytes([header[16], header[17]]);
+            let current_frame = u16::from_le_bytes([header[18], header[19]]);
+            let frame_time = u16::from_le_bytes([header[20], header[21]]);
+            let unknown7 = header[22] & 0xfe;
+            let animation_repeats = (header[22] & 0x01) == 0;
+            let unknown8 = header[23];
             Some(MultiframeData {
                 total_length,
+                alpha_encoder_mode,
+                unknown5,
+                unknown6,
+                total_frame_count,
                 current_frame,
                 frame_time,
-                unknown5,
+                unknown7,
                 animation_repeats,
-                unknown6,
+                unknown8,
             })
         } else {
             None
         };
 
-        let unknown7 = if image_type.has_transparency() {
+        let unknown9 = if image_type.has_transparency() {
             Some([header[12], header[13], header[14], header[15]])
         } else {
             None
@@ -180,12 +197,62 @@ impl QmageHeader {
             is_grayscale,
             unknown4,
             multiframe_data,
-            unknown7,
+            unknown9,
             header_size,
         })
     }
 
     pub fn is_valid(&self) -> Result<(), QmageHeaderError> {
+        if self.magic != QMAGE_MAGIC_2 {
+            return Err(QmageHeaderError::UnknownMagicNumber(self.magic));
+        }
+        if self.qp > 0x1f {
+            return Err(QmageHeaderError::FieldOutOfBounds("qp"));
+        }
+        if (self.unknown2 & 0x70) > 0 {
+            return Err(QmageHeaderError::FieldOutOfBounds("unknown2"));
+        }
+        if (self.unknown3 & 0x40) > 0 {
+            return Err(QmageHeaderError::FieldOutOfBounds("unknown3"));
+        }
+        if (self.unknown4 & 0xBC) > 0 {
+            return Err(QmageHeaderError::FieldOutOfBounds("unknown4"));
+        }
+        if self.is_multiframe && self.multiframe_data.is_none() {
+            return Err(QmageHeaderError::MissingMultiframeData);
+        } else if !self.is_multiframe && self.multiframe_data.is_some() {
+            return Err(QmageHeaderError::UnexpectedMultiframeData);
+        }
+
+        if self.image_type.has_transparency() && self.unknown9.is_none() {
+            return Err(QmageHeaderError::MissingUnknown9);
+        } else if !self.image_type.has_transparency() && self.unknown9.is_some() {
+            return Err(QmageHeaderError::UnexpectedUnknown9);
+        }
+
+        if let Some(d) = self.multiframe_data.as_ref() {
+            if self.version <= QMAGE_MAGIC_VERSION {
+                if d.unknown5 != 0 {
+                    return Err(QmageHeaderError::FieldOutOfBounds("unknown5"));
+                }
+                if d.unknown6 != 0 {
+                    return Err(QmageHeaderError::FieldOutOfBounds("unknown6"));
+                }
+                if d.alpha_encoder_mode != self.image_type.into() {
+                    return Err(QmageHeaderError::UnexpectedAlphaEncoderMode(
+                        d.alpha_encoder_mode,
+                        Into::<u8>::into(self.image_type),
+                    ));
+                }
+                if d.total_length > 0xffff {
+                    return Err(QmageHeaderError::FieldOutOfBounds("total_length"));
+                }
+            }
+            if (d.unknown7 & 0x01) > 0 {
+                return Err(QmageHeaderError::FieldOutOfBounds("unknown7"));
+            }
+        }
+
         let expected_size = if self.is_multiframe {
             24
         } else {
@@ -218,6 +285,83 @@ impl QmageHeader {
             None
         }
     }
+
+    pub fn write_to_buffer(&self, buffer: &mut [u8]) -> Result<(), QmageHeaderError> {
+        self.is_valid()?;
+
+        if buffer.len() < self.header_size {
+            return Err(QmageHeaderError::BufferTooSmall(
+                buffer.len(),
+                self.header_size,
+            ));
+        }
+
+        buffer[0] = (self.magic & 0xff) as u8;
+        buffer[1] = (self.magic >> 8) as u8;
+        buffer[2] = self.version;
+        buffer[3] = self.image_type.into();
+        buffer[4] = (self.is_multiframe as u8) << 7
+            | (self.use_chroma_key as u8) << 6
+            | (!self.is_compressed as u8) << 5
+            | self.qp;
+        buffer[5] = (self.bit_depth as u8) << 6
+            | (self.alpha_depth as u8) << 5
+            | (self.custom_lookup_table as u8) << 4
+            | self.unknown2
+            | Into::<u8>::into(self.codec);
+        buffer[6] = (self.width & 0xff) as u8;
+        buffer[7] = (self.width >> 8) as u8;
+        buffer[8] = (self.height & 0xff) as u8;
+        buffer[9] = (self.height >> 8) as u8;
+        buffer[10] = (self.near_lossless_compression as u8) << 6 | self.unknown3;
+        buffer[11] = (self.is_9_patched as u8) << 7
+            | (self.is_opaque as u8) << 5
+            | (self.pre_multiplied as u8) << 4
+            | (self.use_indexed_color as u8) << 3
+            | (self.is_grayscale as u8) << 2
+            | self.unknown4;
+
+        if self.is_multiframe {
+            let md = self.multiframe_data.as_ref().unwrap();
+
+            if self.version > QMAGE_MAGIC_VERSION {
+                let total_length = md.total_length as u16;
+                buffer[12] = (total_length & 0xff) as u8;
+                buffer[13] = (total_length >> 8) as u8;
+
+                buffer[14] = (md.unknown5 & 0xf0) | (md.alpha_encoder_mode & 0x0f);
+                buffer[15] = md.unknown6;
+            } else {
+                let total_length = md.total_length;
+                buffer[12] = (total_length & 0xff) as u8;
+                buffer[13] = ((total_length >> 8) & 0xff) as u8;
+                buffer[14] = ((total_length >> 16) & 0xff) as u8;
+                buffer[15] = ((total_length >> 24) & 0xff) as u8;
+            }
+
+            buffer[16] = (md.total_frame_count & 0xff) as u8;
+            buffer[17] = (md.total_frame_count >> 8) as u8;
+
+            buffer[18] = (md.current_frame & 0xff) as u8;
+            buffer[19] = (md.current_frame >> 8) as u8;
+
+            buffer[20] = (md.frame_time & 0xff) as u8;
+            buffer[21] = (md.frame_time >> 8) as u8;
+
+            let repeat_bit = if md.animation_repeats { 0u8 } else { 1u8 };
+            buffer[22] = (md.unknown7 & 0xfe) | repeat_bit;
+
+            buffer[23] = md.unknown8;
+        }
+        if self.image_type.has_transparency() && !self.is_multiframe {
+            let unknown9 = self.unknown9.unwrap();
+            for i in 0..4 {
+                buffer[12 + i] = unknown9[i];
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -227,25 +371,45 @@ pub struct MultiframeData {
     // total_length * 4 = length of the frame and header
     // for every other frame:
     // total_length = length of frame and header
-    pub total_length: u16,
+    // 16 bits for above QMAGE_MAGIC_VERSION
+    // 32 bits at QMAGE_MAGIC_VERSION
+    pub total_length: u32,
 
-    // offset: 0xe, little endian
+    // offset: 0xe, mask: 0x0f
+    // only valid above QMAGE_MAGIC_VERSION
+    // otherwise, set to header.codec.into()
+    pub alpha_encoder_mode: u8,
+
+    // offset: 0xe, mask: 0xf0
+    // only valid above QMAGE_MAGIC_VERSION
+    // otherwise, set to 0
+    pub unknown5: u8,
+
+    // offset: 0xf
+    // only valid above QMAGE_MAGIC_VERSION
+    // otherwise, set to 0
+    pub unknown6: u8,
+
+    // offset: 0x10
+    pub total_frame_count: u16,
+
+    // offset: 0x12, little endian
     pub current_frame: u16,
 
-    // offset: 0x10, little endian
+    // offset: 0x14, little endian
     // probably the time it's on screen in milliseconds
     pub frame_time: u16,
 
-    // offset: 0x12, mask: 0xfe
+    // offset: 0x16, mask: 0xfe
     // probably unused
-    pub unknown5: u8,
+    pub unknown7: u8,
 
-    // offset: 0x12, mask: 0x01, inverted
+    // offset: 0x16, mask: 0x01, inverted
     pub animation_repeats: bool,
 
-    // offset: 0x13
-    // probably also unused
-    pub unknown6: [u8; 5],
+    // offset: 0x18
+    // probably unused
+    pub unknown8: u8,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
@@ -328,7 +492,7 @@ impl Into<u8> for QmageCodec {
     }
 }
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Error, Debug, PartialEq, Eq)]
 pub enum QmageHeaderError {
     #[error("Unknown magic number: {0:#04x}")]
     UnknownMagicNumber(u16),
@@ -348,15 +512,21 @@ pub enum QmageHeaderError {
     #[error("Unknown codec byte {0}, should be 0 or 1")]
     UnknownCodec(u8),
 
+    #[error("Field {0} out of bounds")]
+    FieldOutOfBounds(&'static str),
+
     #[error("multiframe_data provided when it shouldn't be")]
     UnexpectedMultiframeData,
 
     #[error("multiframe_data not provided when it should be")]
     MissingMultiframeData,
 
-    #[error("unknown7 provided when it shouldn't be")]
-    UnexpectedUnknown7,
+    #[error("unknown9 provided when it shouldn't be")]
+    UnexpectedUnknown9,
 
-    #[error("unknown7 not provided when it should be")]
-    MissingUnkown7,
+    #[error("unknown9 not provided when it should be")]
+    MissingUnknown9,
+
+    #[error("Found {0} for alpha_encoder_mode but expected {1}")]
+    UnexpectedAlphaEncoderMode(u8, u8),
 }

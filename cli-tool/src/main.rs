@@ -2,13 +2,18 @@ mod licenses_and_credits;
 
 use std::{
     fs::{File, OpenOptions},
-    io::Read,
+    io::{Read, Write},
 };
 
+use image::{DynamicImage, ImageReader};
 use licenses_and_credits::{print_credits, print_license_text, print_project_license};
 
 use qmage::{
     decoder::{decode_v16shortindex_animated, decode_v16shortindex_first_frame},
+    encoder::{
+        encode_v16shortindex_first_frame, encode_v16shortindex_identical_frame,
+        write_result_to_buffer,
+    },
     header::{QmageHeader, QmagePixelType},
     pixels::PixelArray,
 };
@@ -37,6 +42,12 @@ enum Subcommands {
         qmage_file: String,
         output_format: String,
     },
+    EncodeBootImage {
+        input_file: String,
+        qmage_file: String,
+        frame_duration: u16,
+        total_frames: u16,
+    },
 }
 
 fn main() {
@@ -56,6 +67,12 @@ fn main() {
             qmage_file: q,
             output_format: o,
         } => decode_multiframe(q, o),
+        Subcommands::EncodeBootImage {
+            input_file: i,
+            qmage_file: q,
+            frame_duration: f,
+            total_frames: t,
+        } => encode_bootimage(i, q, f, t),
     };
 }
 
@@ -64,6 +81,7 @@ fn decode(qmage_file_path: String, output_file_path: String) {
     let mut output_file = OpenOptions::new()
         .write(true)
         .create(true)
+        .truncate(true)
         .open(output_file_path)
         .unwrap();
     let mut buffer = Vec::new();
@@ -109,11 +127,10 @@ fn decode_multiframe(qmage_file_path: String, output_format: String) {
     let mut pixel_array_converted;
     let mut previous_frame;
     let mut multiframe_data;
-    while offset < buffer.len() {
+    while offset < buffer.len() - 12 {
         slice = &buffer[offset..buffer.len()];
         frame_header = QmageHeader::read_header(slice).unwrap();
         multiframe_data = frame_header.multiframe_data.as_ref().unwrap();
-        println!("Header {}: {}", frame_index, multiframe_data.current_frame,); // DEBUG
         if offset == 0 {
             decode_v16shortindex_first_frame(&mut pixel_array, &read_header, &buffer).unwrap();
         } else {
@@ -125,19 +142,62 @@ fn decode_multiframe(qmage_file_path: String, output_format: String) {
         output_file = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(output_format.replace("%", format!("{}", frame_index).as_str()))
             .unwrap();
         image = pixel_array_converted.rgba8888_to_rgbaimage().unwrap();
         image
             .write_to(&mut output_file, image::ImageFormat::Png)
             .unwrap();
-        offset += (multiframe_data.total_length
+        offset += (multiframe_data.total_length) as usize
             * if frame_header.version == qmage::header::QMAGE_MAGIC_VERSION {
                 1
             } else {
                 if frame_index == 0 { 4 } else { 1 }
-            }) as usize;
+            };
         frame_index += 1;
-        println!("Offset: {}", offset); // DEBUG
     }
+}
+
+fn encode_bootimage(
+    input_file: String,
+    qmage_file: String,
+    frame_duration: u16,
+    total_frames: u16,
+) {
+    let image = ImageReader::open(input_file)
+        .unwrap()
+        .with_guessed_format()
+        .unwrap()
+        .decode()
+        .unwrap();
+
+    let image = image.to_rgba8();
+    let pixel_array =
+        PixelArray::rgbaimage_to_rgba8888(image).convert_to_pixel_type(QmagePixelType::RGB565);
+
+    let result =
+        encode_v16shortindex_first_frame(&pixel_array, frame_duration, total_frames as usize)
+            .unwrap();
+
+    let mut buffer = Vec::new();
+    let header = result.header.clone();
+    let (o, s) = write_result_to_buffer(result, &mut buffer).unwrap();
+    println!("Frame 1: offset: {}, length: {}", o, s.unwrap());
+
+    for i in 2..=total_frames {
+        let result =
+            encode_v16shortindex_identical_frame(&pixel_array, &header, i as usize).unwrap();
+        let (o, s) = write_result_to_buffer(result, &mut buffer).unwrap();
+        println!("Frame {}: offset: {}, length: {}", i, o, s.unwrap());
+    }
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(qmage_file)
+        .unwrap();
+
+    file.write_all(&buffer).unwrap();
 }

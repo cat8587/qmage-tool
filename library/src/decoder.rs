@@ -3,7 +3,7 @@ use crate::header::{QMAGE_MAGIC_VERSION, QmageCodec, QmageHeader, QmagePixelType
 use crate::pixels::{Pixel, PixelArray};
 use thiserror::Error;
 
-const QMAGE_ORIGINAL_DELTA: [[u16; 256]; 2] = [
+pub(crate) const QMAGE_ORIGINAL_DELTA: [[u16; 256]; 2] = [
     [
         0xffe0, 0x0020, 0xffff, 0xf7e0, 0xf800, 0xffdf, 0x0001, 0x0800, 0x0021, 0x0820, 0x0841,
         0xf7bf, 0xf7df, 0x0821, 0xf7c0, 0xffbf, 0x0041, 0xffc0, 0x0861, 0x0840, 0x001f, 0x0862,
@@ -58,7 +58,7 @@ const QMAGE_ORIGINAL_DELTA: [[u16; 256]; 2] = [
     ],
 ];
 
-const QMAGE_DIRS: [(isize, isize); 3] = [(-1, 0), (0, -1), (-1, -1)];
+pub(crate) const QMAGE_DIRS: [(isize, isize); 3] = [(-1, 0), (0, -1), (-1, -1)];
 
 fn decode_pixel_in_block<'a>(
     array: &mut PixelArray,

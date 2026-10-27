@@ -248,4 +248,22 @@ impl PixelArray {
         let (width, height) = (self.width, self.height);
         image::RgbaImage::from_raw(width as u32, height as u32, self.buffer)
     }
+
+    #[cfg(feature = "image-convert")]
+    pub fn rgbaimage_to_rgba8888(image: image::RgbaImage) -> Self {
+        let width = image.width() as usize;
+        let height = image.height() as usize;
+        let pixel_type = QmagePixelType::RGBA8888;
+        let pixel_size = pixel_type.bytes_per_pixel();
+        let line_size = pixel_size * width;
+        let buffer = image.into_raw();
+        Self {
+            pixel_type,
+            pixel_size,
+            line_size,
+            width,
+            height,
+            buffer,
+        }
+    }
 }
