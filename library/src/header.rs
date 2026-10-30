@@ -244,7 +244,9 @@ impl QmageHeader {
                         Into::<u8>::into(self.image_type),
                     ));
                 }
-                if d.total_length > 0xffff {
+                if d.total_length > 0xffff && self.version > QMAGE_MAGIC_VERSION {
+                    return Err(QmageHeaderError::FieldOutOfBounds("total_length"));
+                } else if d.total_length > 0xffffffff && self.version == QMAGE_MAGIC_VERSION {
                     return Err(QmageHeaderError::FieldOutOfBounds("total_length"));
                 }
             }

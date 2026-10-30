@@ -11,14 +11,14 @@ use licenses_and_credits::{print_credits, print_license_text, print_project_lice
 use qmage::{
     decoder::{decode_v16shortindex_animated, decode_v16shortindex_first_frame},
     encoder::{
-        encode_v16shortindex_first_frame, encode_v16shortindex_identical_frame,
-        write_result_to_buffer,
+        EncoderError, EncoderResult, encode_v16shortindex_first_frame,
+        encode_v16shortindex_identical_frame, write_result_to_buffer,
     },
     header::{QmageHeader, QmagePixelType},
     pixels::PixelArray,
 };
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -45,8 +45,12 @@ enum Subcommands {
     EncodeBootImage {
         input_file: String,
         qmage_file: String,
+        #[arg(long, default_value_t = 10)]
         frame_duration: u16,
+        #[arg(long, default_value_t = 10)]
         total_frames: u16,
+        #[arg(long)]
+        use_version_11: bool,
     },
 }
 
@@ -72,7 +76,8 @@ fn main() {
             qmage_file: q,
             frame_duration: f,
             total_frames: t,
-        } => encode_bootimage(i, q, f, t),
+            use_version_11: v11,
+        } => encode_bootimage(i, q, f, t, v11),
     };
 }
 
@@ -159,11 +164,26 @@ fn decode_multiframe(qmage_file_path: String, output_format: String) {
     }
 }
 
+fn unwrap_encoder_result(
+    frame_index: usize,
+    result: Result<EncoderResult, EncoderError>,
+) -> EncoderResult {
+    match result {
+        Ok(r) => r,
+        Err(EncoderError::RecordTooBig(s, m)) => {
+            let mut cmd = Cli::command();
+            cmd.error(ErrorKind::ValueValidation, format!("Record size too large for frame {}, size: {} (greater than the maximum {})\nNote: try using --use-version-11, which supports larger frame records", frame_index, s, m)).exit();
+        }
+        _ => result.unwrap(),
+    }
+}
+
 fn encode_bootimage(
     input_file: String,
     qmage_file: String,
     frame_duration: u16,
     total_frames: u16,
+    use_version_11: bool,
 ) {
     let image = ImageReader::open(input_file)
         .unwrap()
@@ -176,9 +196,15 @@ fn encode_bootimage(
     let pixel_array =
         PixelArray::rgbaimage_to_rgba8888(image).convert_to_pixel_type(QmagePixelType::RGB565);
 
-    let result =
-        encode_v16shortindex_first_frame(&pixel_array, frame_duration, total_frames as usize)
-            .unwrap();
+    let result = unwrap_encoder_result(
+        1,
+        encode_v16shortindex_first_frame(
+            &pixel_array,
+            frame_duration,
+            total_frames as usize,
+            if use_version_11 { 11 } else { 15 },
+        ),
+    );
 
     let mut buffer = Vec::new();
     let header = result.header.clone();
@@ -186,8 +212,10 @@ fn encode_bootimage(
     println!("Frame 1: offset: {}, length: {}", o, s.unwrap());
 
     for i in 2..=total_frames {
-        let result =
-            encode_v16shortindex_identical_frame(&pixel_array, &header, i as usize).unwrap();
+        let result = unwrap_encoder_result(
+            i as usize,
+            encode_v16shortindex_identical_frame(&pixel_array, &header, i as usize),
+        );
         let (o, s) = write_result_to_buffer(result, &mut buffer).unwrap();
         println!("Frame {}: offset: {}, length: {}", i, o, s.unwrap());
     }

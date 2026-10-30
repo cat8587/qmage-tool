@@ -5,7 +5,7 @@ A library and command-line tool for working with Samsung's proprietary .qmg file
 Right now, animations are not supported for now, but for static images, use this:
 
 ```bash
-./qmage-tool encode-boot-image <regular image> <bootsamsung.qmg output path> 10 10
+./qmage-tool encode-boot-image <regular image> <bootsamsung.qmg output path>
 ```
 
 To make it into a magisk module, make a new directory and write a module.prop like this:

@@ -1,5 +1,5 @@
 use crate::bit_writer::{BitWriter, BitWriterError};
-use crate::decoder::QMAGE_DIRS;
+use crate::decoder::{QMAGE_DIRS, QMAGE_ORIGINAL_DELTA};
 use crate::header::{
     MultiframeData, QMAGE_MAGIC_2, QMAGE_MAGIC_VERSION, QmageCodec, QmageHeader, QmageHeaderError,
     QmagePixelType,
@@ -32,7 +32,13 @@ fn should_copy_block(array: &PixelArray, block_x: usize, block_y: usize) -> bool
     return true;
 }
 
-fn block_size_with_mode(array: &PixelArray, block_x: usize, block_y: usize, mode: usize) -> usize {
+fn block_size_with_mode(
+    array: &PixelArray,
+    block_x: usize,
+    block_y: usize,
+    mode: usize,
+    deltas: &[u16],
+) -> usize {
     let width = array.width();
     let height = array.height();
 
@@ -40,17 +46,40 @@ fn block_size_with_mode(array: &PixelArray, block_x: usize, block_y: usize, mode
     for j in 0..4 {
         for i in 0..4 {
             if (block_x + i) < width && (block_y + j) < height {
-                total += 3;
                 let pixel = array.get_pixel(block_x + i, block_y + j);
-                if block_x > 0
-                    && block_y > 0
-                    && array.get_pixel(
+                let pixel_value = match pixel {
+                    Some(Pixel::RGB565(v)) => v,
+                    _ => unreachable!(),
+                };
+                let mut write_pixel = false;
+                if (block_x > 0 || QMAGE_DIRS[mode].0 >= 0)
+                    && (block_y > 0 || QMAGE_DIRS[mode].1 >= 0)
+                {
+                    let other = array.get_pixel(
                         ((block_x + i) as isize + QMAGE_DIRS[mode].0) as usize,
                         ((block_y + j) as isize + QMAGE_DIRS[mode].1) as usize,
-                    ) == pixel
-                {
+                    );
+                    let other_pixel = match other {
+                        Some(Pixel::RGB565(v)) => v,
+                        _ => unreachable!(),
+                    };
+                    if other_pixel == pixel_value {
+                    } else {
+                        let delta = other_pixel.wrapping_sub(pixel_value);
+                        let index = deltas.iter().position(|d| *d == delta);
+                        if let Some(i) = index {
+                            let i = i + 2;
+                            let bits = i.highest_one().unwrap() - 1;
+                            total += bits as usize + 4;
+                        } else {
+                            write_pixel = true;
+                        }
+                    }
                 } else {
-                    total += 16;
+                    write_pixel = true;
+                }
+                if write_pixel {
+                    total += 19;
                 }
             }
         }
@@ -63,6 +92,7 @@ pub fn encode_v16shortindex_first_frame(
     array: &PixelArray,
     frame_time: u16,
     total_frames: usize,
+    version: u8,
 ) -> Result<EncoderResult, EncoderError> {
     if array.width() >= 65536 || array.height() >= 65536 {
         return Err(EncoderError::TooBig(array.width(), array.height()));
@@ -79,7 +109,7 @@ pub fn encode_v16shortindex_first_frame(
 
     let header = QmageHeader {
         magic: QMAGE_MAGIC_2,
-        version: 15,
+        version,
         image_type: QmagePixelType::RGB565,
         is_multiframe: true,
         use_chroma_key: false,
@@ -116,6 +146,8 @@ pub fn encode_v16shortindex_first_frame(
         header_size: 24,
     };
 
+    let deltas = QMAGE_ORIGINAL_DELTA[(header.version != QMAGE_MAGIC_VERSION) as usize];
+
     let mut bit_writer_1 = BitWriter::new();
     let mut bit_writer_2 = BitWriter::new();
     let mut byte_writer: Vec<u8> = Vec::new();
@@ -131,17 +163,17 @@ pub fn encode_v16shortindex_first_frame(
                 };
             }
             let mut best_mode = 0;
-            let mut best_size = block_size_with_mode(array, x, y, best_mode);
+            let mut best_size = block_size_with_mode(array, x, y, best_mode, &deltas);
             let mut candidate;
             let mut candidate_mode;
             candidate_mode = 1;
-            candidate = block_size_with_mode(array, x, y, candidate_mode);
+            candidate = block_size_with_mode(array, x, y, candidate_mode, &deltas);
             if candidate < best_size {
                 best_mode = candidate_mode;
                 best_size = candidate;
             }
             candidate_mode = 2;
-            candidate = block_size_with_mode(array, x, y, candidate_mode);
+            candidate = block_size_with_mode(array, x, y, candidate_mode, &deltas);
             if candidate < best_size {
                 best_mode = candidate_mode;
                 best_size = candidate;
@@ -158,24 +190,51 @@ pub fn encode_v16shortindex_first_frame(
             for j in 0..4 {
                 for i in 0..4 {
                     if (x + i) < width && (y + j) < height {
-                        match bit_writer_2.write_bits8(3, 7) {
-                            Err(x) => return Err(EncoderError::WriteFailed(x)),
-                            _ => {}
-                        };
-
+                        let mut write_pixel = false;
                         let pixel = array.get_pixel(x + i, y + j);
-                        if x > 0
-                            && y > 0
-                            && array.get_pixel(
-                                ((x + i) as isize + QMAGE_DIRS[best_mode].0) as usize,
-                                ((y + j) as isize + QMAGE_DIRS[best_mode].1) as usize,
-                            ) == pixel
+                        let pixel_value = match pixel {
+                            Some(Pixel::RGB565(v)) => v,
+                            _ => unreachable!(),
+                        };
+                        let other = array.get_pixel(
+                            ((x + i) as isize + QMAGE_DIRS[best_mode].0) as usize,
+                            ((y + j) as isize + QMAGE_DIRS[best_mode].1) as usize,
+                        );
+                        if (x > 0 || QMAGE_DIRS[best_mode].0 >= 0)
+                            && (y > 0 || QMAGE_DIRS[best_mode].1 >= 0)
+                            && other.is_some()
                         {
-                            cbp |= 1u16 << index;
-                        } else {
-                            let pixel_value = match pixel {
+                            let other_pixel = match other {
                                 Some(Pixel::RGB565(v)) => v,
                                 _ => unreachable!(),
+                            };
+                            if other_pixel == pixel_value {
+                                cbp |= 1 << index;
+                            } else {
+                                let delta = pixel_value.wrapping_sub(other_pixel);
+                                let index = deltas.iter().position(|d| *d == delta);
+                                if let Some(i) = index
+                                    && i < 253
+                                {
+                                    let i = i + 2;
+                                    let bits = i.highest_one().unwrap() as u8 - 1;
+                                    bit_writer_2
+                                        .write_bits8(3, bits)
+                                        .map_err(|e| EncoderError::WriteFailed(e))?;
+                                    bit_writer_1
+                                        .write_bits8(bits as usize + 1, i as u8 - (2 << bits))
+                                        .map_err(|e| EncoderError::WriteFailed(e))?;
+                                } else {
+                                    write_pixel = true;
+                                }
+                            }
+                        } else {
+                            write_pixel = true;
+                        }
+                        if write_pixel {
+                            match bit_writer_2.write_bits8(3, 7) {
+                                Err(x) => return Err(EncoderError::WriteFailed(x)),
+                                _ => {}
                             };
                             byte_writer.push((pixel_value & 0xff) as u8);
                             byte_writer.push((pixel_value >> 8) as u8);
@@ -313,7 +372,7 @@ pub fn write_result_to_buffer(
     let record_size = if let Some(md) = result.header.multiframe_data.as_mut() {
         let record_size = buffer.len() - header_index;
         let is_divided_by_4 =
-            result.header.version != QMAGE_MAGIC_VERSION && result.byte_array_2.is_some();
+            result.header.version > QMAGE_MAGIC_VERSION && result.byte_array_2.is_some();
 
         let total_length_recorderd = if is_divided_by_4 {
             record_size / 4
@@ -321,11 +380,17 @@ pub fn write_result_to_buffer(
             record_size
         };
 
-        if total_length_recorderd > 0xffff {
-            if is_divided_by_4 {
-                return Err(EncoderError::RecordTooBig(record_size, 262140));
-            } else {
-                return Err(EncoderError::RecordTooBig(record_size, 65535));
+        if result.header.version > QMAGE_MAGIC_VERSION {
+            if total_length_recorderd > 0xffff {
+                if is_divided_by_4 {
+                    return Err(EncoderError::RecordTooBig(record_size, 262140));
+                } else {
+                    return Err(EncoderError::RecordTooBig(record_size, 65535));
+                }
+            }
+        } else {
+            if total_length_recorderd > 0xffffffff {
+                return Err(EncoderError::RecordTooBig(record_size, 4294967295));
             }
         }
 
